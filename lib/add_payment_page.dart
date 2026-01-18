@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:debtnote/db_helper.dart';
 
-class AddDebtPage extends StatefulWidget {
-  const AddDebtPage({super.key});
+class AddPaymentPage extends StatefulWidget {
+  const AddPaymentPage({super.key});
 
   @override
-  State<AddDebtPage> createState() => _AddDebtPageState();
+  State<AddPaymentPage> createState() => _AddPaymentPageState();
 }
 
-class _AddDebtPageState extends State<AddDebtPage> {
+class _AddPaymentPageState extends State<AddPaymentPage> {
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
   final TextEditingController _valueController = TextEditingController();
@@ -46,7 +46,7 @@ class _AddDebtPageState extends State<AddDebtPage> {
       return;
     }
 
-    await _dbHelper.insertUtang({
+    await _dbHelper.insertBayar({
       'tanggal': _dateController.text,
       'keterangan': _descController.text,
       'nilai': int.parse(_valueController.text),
@@ -60,7 +60,7 @@ class _AddDebtPageState extends State<AddDebtPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Tambah Utang"),
+        title: const Text("Tambah Pembayaran"),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
@@ -85,7 +85,7 @@ class _AddDebtPageState extends State<AddDebtPage> {
             TextField(
               controller: _descController,
               decoration: const InputDecoration(
-                labelText: "Keterangan (misal: Pinjam Uang Budi)",
+                labelText: "Keterangan (misal: Bayar Utang Budi)",
                 border: OutlineInputBorder(),
               ),
             ),

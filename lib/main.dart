@@ -1,7 +1,5 @@
-// ignore_for_file: unused_import
-
 import 'package:flutter/material.dart';
-import 'package:mydesign/splash_screen.dart';
+import 'package:debtnote/splash_screen.dart';
 
 void main() {
   runApp(const MyApp());

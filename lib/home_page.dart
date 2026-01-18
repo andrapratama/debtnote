@@ -4,8 +4,12 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:mydesign/add_debt_page.dart';
-import 'package:mydesign/db_helper.dart';
+import 'package:debtnote/add_debt_page.dart';
+import 'package:debtnote/add_payment_page.dart';
+import 'package:debtnote/db_helper.dart';
+import 'package:debtnote/screens/bayar_tab.dart';
+import 'package:debtnote/screens/dashboard_tab.dart';
+import 'package:debtnote/screens/utang_tab.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -17,9 +21,14 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> _utangList = [];
   final DbHelper _dbHelper = DbHelper();
+
+  // State
+  int _selectedIndex = 0;
+  List<Map<String, dynamic>> _utangList = [];
+  List<Map<String, dynamic>> _bayarList = [];
   int _totalUtang = 0;
+  int _totalBayar = 0;
 
   @override
   void initState() {
@@ -27,153 +36,21 @@ class _HomePageState extends State<HomePage> {
     _refreshData();
   }
 
-  void _refreshData() async {
-    final data = await _dbHelper.getUtangList();
-    int total = data.fold(0, (sum, item) => sum + (item['nilai'] as int));
+  Future<void> _refreshData() async {
+    final utangData = await _dbHelper.getUtangList();
+    final bayarData = await _dbHelper.getBayarList();
+
+    int totalUtang =
+        utangData.fold(0, (sum, item) => sum + (item['nilai'] as int));
+    int totalBayar =
+        bayarData.fold(0, (sum, item) => sum + (item['nilai'] as int));
+
     setState(() {
-      _utangList = data;
-      _totalUtang = total;
+      _utangList = utangData;
+      _bayarList = bayarData;
+      _totalUtang = totalUtang;
+      _totalBayar = totalBayar;
     });
-  }
-
-  void _deleteUtang(int id) async {
-    await _dbHelper.deleteUtang(id);
-    _refreshData();
-  }
-
-  // --- LOGIKA EXPORT ---
-  Future<void> _exportData() async {
-    try {
-      // 1. Ambil semua data dari DB
-      final data = await _dbHelper.getUtangList();
-      if (data.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Tidak ada data untuk diexport.")),
-        );
-        return;
-      }
-
-      // 2. Ubah ke format JSON String
-      String jsonString = jsonEncode(data);
-
-      // 3. Simpan ke file sementara
-      final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/backup_utang.json');
-      await file.writeAsString(jsonString);
-
-      // 4. Bagikan file tersebut (Share)
-      // Menggunakan XFile untuk share_plus terbaru
-      await Share.shareXFiles([
-        XFile(file.path),
-      ], text: 'Backup Data Catatan Utang');
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Gagal Export: $e")));
-    }
-  }
-
-  // --- LOGIKA IMPORT ---
-  Future<void> _importData() async {
-    try {
-      // 1. Buka File Picker
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-      );
-
-      if (result != null) {
-        File file = File(result.files.single.path!);
-
-        // 2. Baca isi file
-        String content = await file.readAsString();
-
-        // 3. Parsing JSON
-        List<dynamic> jsonList = jsonDecode(content);
-
-        // 4. Konfirmasi User sebelum hapus data lama
-        if (!mounted) return;
-        bool confirm =
-            await showDialog(
-              context: context,
-              builder:
-                  (context) => AlertDialog(
-                    title: const Text("Peringatan Import"),
-                    content: const Text(
-                      "Import akan MENGHAPUS SEMUA data saat ini dan menggantinya dengan data baru. Lanjutkan?",
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text("Batal"),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text(
-                          "TIMPA DATA",
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    ],
-                  ),
-            ) ??
-            false;
-
-        if (confirm) {
-          // 5. Hapus data lama
-          await _dbHelper.deleteAllUtang();
-
-          // 6. Masukkan data baru (Looping)
-          for (var item in jsonList) {
-            await _dbHelper.insertUtang({
-              'tanggal': item['tanggal'],
-              'keterangan': item['keterangan'],
-              'nilai': item['nilai'],
-              // Kita tidak memasukkan 'id' agar database membuat ID baru yang urut
-            });
-          }
-
-          // 7. Refresh UI
-          _refreshData();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Data berhasil diimport!")),
-          );
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("File rusak atau format salah!")),
-      );
-    }
-  }
-
-  void _showDeleteConfirmation(int id) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Hapus Data"),
-          content: const Text("Yakin ingin menghapus?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text("Batal"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _deleteUtang(id);
-              },
-              child: const Text("Hapus", style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   String formatRupiah(int number) {
@@ -185,14 +62,241 @@ class _HomePageState extends State<HomePage> {
     return currencyFormatter.format(number);
   }
 
+  void _deleteUtang(int id) async {
+    await _dbHelper.deleteUtang(id);
+    _refreshData();
+  }
+
+  void _deleteBayar(int id) async {
+    await _dbHelper.deleteBayar(id);
+    _refreshData();
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  // --- LOGIKA EXPORT/IMPORT ---
+  Future<void> _exportData() async {
+    try {
+      final utangData = await _dbHelper.getUtangList();
+      final bayarData = await _dbHelper.getBayarList();
+
+      if (utangData.isEmpty && bayarData.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Tidak ada data untuk diekspor.")),
+        );
+        return;
+      }
+
+      Map<String, dynamic> backupData = {
+        'utang': utangData,
+        'bayar': bayarData,
+      };
+
+      String jsonString = jsonEncode(backupData);
+      final directory = await getTemporaryDirectory();
+      final file = File('${directory.path}/backup_catatan_utang.json');
+      await file.writeAsString(jsonString);
+
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], text: 'Backup Data Catatan Utang');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Gagal Ekspor: $e")));
+    }
+  }
+
+  Future<void> _importData() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (result != null) {
+        File file = File(result.files.single.path!);
+        String content = await file.readAsString();
+
+        if (!mounted) return;
+        bool confirm = await showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text("Peringatan Impor"),
+                content: const Text(
+                  "Impor akan MENGHAPUS SEMUA data saat ini dan menggantinya dengan data dari file backup. Lanjutkan?",
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text("Batal"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text("TIMPA DATA",
+                        style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+        if (confirm) {
+          await _dbHelper.deleteAllUtang();
+          await _dbHelper.deleteAllBayar();
+
+          // Logika baru untuk menangani format lama (List) dan baru (Map)
+          final dynamic decodedJson = jsonDecode(content);
+
+          if (decodedJson is Map<String, dynamic>) {
+            // Format BARU: Map dengan kunci 'utang' dan 'bayar'
+            if (decodedJson.containsKey('utang')) {
+              List<dynamic> utangJson = decodedJson['utang'];
+              for (var item in utangJson) {
+                await _dbHelper.insertUtang({
+                  'tanggal': item['tanggal'],
+                  'keterangan': item['keterangan'],
+                  'nilai': item['nilai'],
+                });
+              }
+            }
+            if (decodedJson.containsKey('bayar')) {
+              List<dynamic> bayarJson = decodedJson['bayar'];
+              for (var item in bayarJson) {
+                await _dbHelper.insertBayar({
+                  'tanggal': item['tanggal'],
+                  'keterangan': item['keterangan'],
+                  'nilai': item['nilai'],
+                });
+              }
+            }
+          } else if (decodedJson is List) {
+            // Format LAMA: List berisi data utang saja
+            for (var item in decodedJson) {
+               await _dbHelper.insertUtang({
+                'tanggal': item['tanggal'],
+                'keterangan': item['keterangan'],
+                'nilai': item['nilai'],
+              });
+            }
+          }
+
+          _refreshData();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Data berhasil diimpor!")),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("File rusak atau format salah!")),
+      );
+    }
+  }
+
+  // --- UI WIDGETS ---
+
+  Widget _buildFloatingActionButton() {
+    if (_selectedIndex == 0) {
+      return Container(); // Tidak ada FAB di Dashboard
+    }
+    return FloatingActionButton(
+      backgroundColor: _selectedIndex == 1 ? Colors.red : Colors.green,
+      child: const Icon(Icons.add, color: Colors.white),
+      onPressed: () async {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                _selectedIndex == 1 ? const AddDebtPage() : const AddPaymentPage(),
+          ),
+        );
+        if (result == true) _refreshData();
+      },
+    );
+  }
+
+  Widget _buildTotalBar() {
+    if (_selectedIndex == 0) {
+      return Container(); // Tidak ada total bar di dashboard
+    }
+
+    String title = _selectedIndex == 1 ? "Total Utang" : "Total Pembayaran";
+    int total = _selectedIndex == 1 ? _totalUtang : _totalBayar;
+    Color color = _selectedIndex == 1 ? Colors.red : Colors.green;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withAlpha(51),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            formatRupiah(total),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
+    final List<Widget> pages = [
+      DashboardTab(
+        totalUtang: _totalUtang,
+        totalBayar: _totalBayar,
+        onRefresh: _refreshData,
+      ),
+      UtangTab(
+        utangList: _utangList,
+        onDelete: _deleteUtang,
+        onRefresh: _refreshData,
+      ),
+      BayarTab(
+        bayarList: _bayarList,
+        onDelete: _deleteBayar,
+        onRefresh: _refreshData,
+      ),
+    ];
+
+    final List<String> pageTitles = [
+      "Dashboard",
+      "Daftar Utang",
+      "Daftar Pembayaran"
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Daftar Utang"),
+        title: Text(pageTitles[_selectedIndex]),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
-        // --- TAMBAHAN TOMBOL MENU ---
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) {
@@ -226,99 +330,32 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: Column(
+      body: pages[_selectedIndex],
+      floatingActionButton: _buildFloatingActionButton(),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child:
-                _utangList.isEmpty
-                    ? const Center(child: Text("Belum ada data utang."))
-                    : ListView.builder(
-                      padding: const EdgeInsets.only(
-                        top: 10,
-                        left: 10,
-                        right: 10,
-                        bottom: 80,
-                      ),
-                      itemCount: _utangList.length,
-                      itemBuilder: (context, index) {
-                        final item = _utangList[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          child: InkWell(
-                            onLongPress:
-                                () => _showDeleteConfirmation(item['id']),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.teal.shade100,
-                                child: const Icon(
-                                  Icons.monetization_on,
-                                  color: Colors.teal,
-                                ),
-                              ),
-                              title: Text(
-                                item['keterangan'],
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Text(item['tanggal']),
-                              trailing: Text(
-                                formatRupiah(item['nilai']),
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withValues(alpha: 0.5),
-                  spreadRadius: 2,
-                  blurRadius: 5,
-                  offset: const Offset(0, -3),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "Total Hutang:",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  formatRupiah(_totalUtang),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                  ),
-                ),
-              ],
-            ),
+          _buildTotalBar(),
+          BottomNavigationBar(
+            items: const <BottomNavigationBarItem>[
+              BottomNavigationBarItem(
+                icon: Icon(Icons.dashboard),
+                label: 'Dashboard',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.arrow_upward),
+                label: 'Utang',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.arrow_downward),
+                label: 'Bayar',
+              ),
+            ],
+            currentIndex: _selectedIndex,
+            selectedItemColor: Colors.teal,
+            onTap: _onItemTapped,
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.teal,
-        child: const Icon(Icons.add, color: Colors.white),
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AddDebtPage()),
-          );
-          if (result == true) _refreshData();
-        },
       ),
     );
   }
